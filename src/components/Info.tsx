@@ -18,6 +18,7 @@ import {
 } from "wagmi";
 import { Address, parseEther } from "viem";
 import { abi } from "../abi/abi";
+import { ethers } from "ethers";
 
 export default function Tranfer() {
   const [addressValue, setAddressValue] = useState("");
@@ -56,7 +57,7 @@ export default function Tranfer() {
 
   const handleClick2 = () => {
     console.log(result, "balanceOf result");
-    setBalanceOfData(result.data?.toString() || "0");
+    setBalanceOfData(ethers.formatEther(result.data as bigint) || "0");
   };
 
   // 监控交易

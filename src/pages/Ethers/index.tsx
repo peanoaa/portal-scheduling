@@ -6,7 +6,7 @@
  * @FilePath: \rainbowkit-work\src\components\Info.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import styles from "../../styles/Home.module.css";
 import {
   useSendTransaction,
@@ -16,91 +16,112 @@ import {
   useWatchContractEvent,
   useWriteContract,
 } from "wagmi";
-import { ethers } from "ethers";
+import { ethers, Contract } from "ethers";
 import { Address, parseEther } from "viem";
 import { abi } from "../../abi/abi";
-
-import { JsonRpcProvider } from 'ethers';
+import { useEthersReadProvider, getSigner } from "../../hooks/ethers";
 
 export default function Tranfer() {
   //ethers
+  const provider = useEthersReadProvider();
 
- // 转账
-//  const provider = useProvider();
-//  console.log(provider, "+++++++++++++++++++++++++++++==");
-// const singer = pro
+
+  // 转账
+
   const [addressValue, setAddressValue] = useState("");
   const [moneyValue, setMoneyValue] = useState("");
-  const { sendTransaction, data, isPending } = useSendTransaction();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt();
-  const handleClick = (addressValue: string, moneyValue: string) => {
-    console.log(addressValue, moneyValue, "addressValue,moneyValue");
-    const res = sendTransaction({
-      to: addressValue as `0x${string}`,
-      value: parseEther(moneyValue),
-    });
-    console.log(res, "res");
+  const [transfering, setTransfering] = useState(false);
+  const handleClick = async (addressValue: string, moneyValue: string) => {
+    const signer = await getSigner();
+    try {
+      setTransfering(true);
+      const res = await signer.sendTransaction({
+        to: addressValue as `0x${string}`,
+        value: parseEther(moneyValue),
+      });
+      console.log(res, "res");
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setTransfering(false);
+    }
+
   };
 
   //   addressBalance
   const [inputValue, setInputValue] = useState("");
-  const [queryAddress, setQueryAddress] = useState<`0x${string}` | undefined>();
-  const { data: balanceData } = useBalance({ address: queryAddress });
-  const handleClick1 = () => {
-    if (inputValue) {
-      setQueryAddress(inputValue as `0x${string}`);
-    }
+  const [queryAddress, setQueryAddress] = useState("");
+
+  const handleClick1 = async () => {
+    const bal = await provider?.getBalance(inputValue as `0x${string}`);
+    // if (inputValue) {
+    //   setQueryAddress(inputValue as `0x${string}`);
+    // }
+    setQueryAddress(ethers.formatEther(bal as bigint) || "0");
   };
 
   //   balanceof
   const [address, setAddress] = useState("");
+  const [balance, setBalance] = useState("");
 
-  const handleClick2 = () => {
-    const result = useReadContract({
-      abi,
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F" as Address, //合约的地址
-      functionName: "balanceOf",
-      args: [address as Address],
-    });
-    //打印result
-    console.log(result);
+  const handleClick2 = async () => {
+    try {
+      const contract = new Contract(
+        "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6",
+        abi,
+        provider
+      );
+      const balance = await contract.balanceOf(address as `0x${string}`);
+      setBalance(ethers.formatEther(balance as bigint) || "0");
+    } catch (err) {
+      console.log(err);
+    }
+
   };
 
   // 监控交易
 
   const [detected, setDetected] = useState(false);
+  useEffect(() => {
+    if (!provider) return;
 
-  useWatchContractEvent({
-    address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
-    abi,
-    eventName: "Transfer",
-    onLogs() {
+    const contract = new Contract(
+      "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6",
+      abi,
+      provider
+    );
+
+
+    contract.on("Transfer", () => {
       setDetected(true);
-    },
-    syncConnectedChain: true,
-  });
+    });
+  }, [provider]);
+
 
   // TokneTransfer
 
   const [toAddress, setToAddress] = useState("");
   const [moneyvalue, setMoneyValue1] = useState("");
+  const [tokenTransfer, setTokenTransfer] = useState(false);
 
-  // ✅ useWriteContract 必须在组件顶层调用（不在函数内部）
-  const {
-    writeContract,
-    isPending: isPendingWrite,
-    error,
-  } = useWriteContract();
 
-  const onTransfer = () => {
-    // ✅ abi、address、functionName、args 都传给 writeContract 函数
-    writeContract({
+  const onTransfer = async () => {
+    const signer = await getSigner();
+
+    const contract = new Contract(
+      "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6",
       abi,
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F" as Address,
-      functionName: "transfer",
-      args: [toAddress as Address, parseEther(moneyvalue)],
-    });
+      signer
+    );
+    setTokenTransfer(true);
+    try {
+      const tx = await contract.transfer(toAddress as Address, parseEther(moneyvalue));
+    } catch (err) {
+      console.log(err);
+    } finally {
+      setTokenTransfer(false);
+    }
+
   };
 
   return (
@@ -125,10 +146,10 @@ export default function Tranfer() {
         <button
           className={styles.button}
           onClick={() => handleClick(addressValue, moneyValue)}
-          disabled={isPending}
+
         >
           {" "}
-          {isPending ? "Confirming..." : "Send"}
+          {transfering ? "Confirming..." : "Send"}
         </button>
       </div>
 
@@ -146,7 +167,7 @@ export default function Tranfer() {
             <button className={styles.button} onClick={handleClick1}>
               查询
             </button>
-            <div className={styles.balance}>余额：{data?.formatted || "0"}</div>
+            <div className={styles.balance}>余额：{queryAddress || "0"}</div>
           </div>
         </div>
       </div>
@@ -166,13 +187,13 @@ export default function Tranfer() {
           <button onClick={handleClick2} className={styles.button}>
             查询
           </button>
-          <div>地址余额为：</div>
+          <div>地址余额为：{balance || "0"}</div>
         </div>
       </div>
 
       {/* Monitor */}
       <div className={styles.main}>
-        <div>监控交易</div>
+
         <div>
           <div>监控交易</div>
           {detected && <div>监控到了</div>}
@@ -201,11 +222,10 @@ export default function Tranfer() {
           <button
             className={styles.button}
             onClick={onTransfer}
-            disabled={isPending}
+            disabled={tokenTransfer}
           >
-            {isPending ? "发送中..." : "发送"}
+            {tokenTransfer ? "发送中..." : "发送"}
           </button>
-          {error && <p style={{ color: "red" }}>{(error as Error).message}</p>}
         </div>
       </div>
     </div>

@@ -16,9 +16,6 @@ export function useEthersReadProvider() {
 
 
   export function getSigner() {
-    if (typeof window === "undefined" || !window.ethereum) {
-      throw new Error("未检测到钱包");
-    }
     const browserProvider = new BrowserProvider(window.ethereum);
     return browserProvider.getSigner();
   }
