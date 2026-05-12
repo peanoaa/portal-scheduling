@@ -2,12 +2,12 @@
  * @Author: leiqw1 leiqw1@lenovo.com
  * @Date: 2026-05-10 20:26:02
  * @LastEditors: leiqw1 leiqw1@lenovo.com
- * @LastEditTime: 2026-05-12 15:07:17
+ * @LastEditTime: 2026-05-12 16:30:42
  * @FilePath: \rainbowkit-work\src\components\Info.tsx
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 import { useState } from "react";
-import styles from "../styles/Home.module.css";
+import styles from "../../styles/Home.module.css";
 import {
   useSendTransaction,
   useWaitForTransactionReceipt,
@@ -16,10 +16,19 @@ import {
   useWatchContractEvent,
   useWriteContract,
 } from "wagmi";
+import { ethers } from "ethers";
 import { Address, parseEther } from "viem";
-import { abi } from "../abi/abi";
+import { abi } from "../../abi/abi";
+
+import { JsonRpcProvider } from 'ethers';
 
 export default function Tranfer() {
+  //ethers
+
+ // 转账
+//  const provider = useProvider();
+//  console.log(provider, "+++++++++++++++++++++++++++++==");
+// const singer = pro
   const [addressValue, setAddressValue] = useState("");
   const [moneyValue, setMoneyValue] = useState("");
   const { sendTransaction, data, isPending } = useSendTransaction();
@@ -163,6 +172,7 @@ export default function Tranfer() {
 
       {/* Monitor */}
       <div className={styles.main}>
+        <div>监控交易</div>
         <div>
           <div>监控交易</div>
           {detected && <div>监控到了</div>}
