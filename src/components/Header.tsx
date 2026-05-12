@@ -8,7 +8,6 @@ export default function Header() {
             <div style={{display: 'flex', gap: '1rem', alignItems:'center'}}>
                 <Link href="/">wagmi</Link>
                 <Link href="/viem">viem</Link>
-                <Link href="/RainBowKit">RainBowKit</Link>
                 <Link href="/Ethers">Ethers</Link>
                 <ConnectButton />
             </div>
