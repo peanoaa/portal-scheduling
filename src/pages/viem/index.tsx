@@ -39,7 +39,7 @@ export default function Tranfer() {
   const [queryAddress, setQueryAddress] = useState<`0x${string}` | undefined>();
   const [balanceData,setBalanceData] = useState("");
   const handleClick1 = async() => {
-    const balanceData = await publicClient?.getBalance({ address: queryAddress as Address });
+    const balanceData = await publicClient?.getBalance({ address: inputValue as Address });
     setBalanceData(formatUnits(balanceData as bigint,18));
   };
 
@@ -50,7 +50,7 @@ export default function Tranfer() {
   const handleClick2 = async () => {
     const result = await publicClient?.readContract({
       abi,
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F" as Address, //合约的地址
+      address: "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6" as Address, //合约的地址
       functionName: "balanceOf",
       args: [address as Address],
     });
@@ -66,7 +66,7 @@ export default function Tranfer() {
   useEffect(() => {
     if (!publicClient) return;
     const unwatch = publicClient.watchContractEvent({
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+      address: "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6",
       abi,
       eventName: "Transfer",
       onLogs() {
@@ -90,7 +90,7 @@ export default function Tranfer() {
     setIsPending(true);
     await walletClient?.writeContract({
       abi,
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F" as Address,
+      address: "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6" as Address,
       functionName: "transfer",
       args: [toAddress as Address, parseEther(moneyvalue)],
     });

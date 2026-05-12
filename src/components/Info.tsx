@@ -46,16 +46,17 @@ export default function Tranfer() {
 
   //   balanceof
   const [address, setAddress] = useState("");
-
-  const handleClick2 = () => {
-    const result = useReadContract({
+  const [balanceOfData, setBalanceOfData] = useState("");
+  const result = useReadContract({
       abi,
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F" as Address, //合约的地址
+      address: "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6" as Address, //合约的地址
       functionName: "balanceOf",
       args: [address as Address],
     });
-    //打印result
-    console.log(result);
+
+  const handleClick2 = () => {
+    console.log(result, "balanceOf result");
+    setBalanceOfData(result.data?.toString() || "0");
   };
 
   // 监控交易
@@ -63,7 +64,7 @@ export default function Tranfer() {
   const [detected, setDetected] = useState(false);
 
   useWatchContractEvent({
-    address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+    address: "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6",
     abi,
     eventName: "Transfer",
     onLogs() {
@@ -85,10 +86,11 @@ export default function Tranfer() {
   } = useWriteContract();
 
   const onTransfer = () => {
+    console.log(toAddress, moneyvalue, "toAddress,moneyvalue");
     // ✅ abi、address、functionName、args 都传给 writeContract 函数
     writeContract({
       abi,
-      address: "0x71C7656EC7ab88b098defB751B7401B5f6d8976F" as Address,
+      address: "0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6" as Address,
       functionName: "transfer",
       args: [toAddress as Address, parseEther(moneyvalue)],
     });
@@ -137,7 +139,7 @@ export default function Tranfer() {
             <button className={styles.button} onClick={handleClick1}>
               查询
             </button>
-            <div className={styles.balance}>余额：{data?.formatted || "0"}</div>
+            <div className={styles.balance}>余额：{balanceData?.formatted || "0"}</div>
           </div>
         </div>
       </div>
@@ -157,7 +159,7 @@ export default function Tranfer() {
           <button onClick={handleClick2} className={styles.button}>
             查询
           </button>
-          <div>地址余额为：</div>
+          <div>地址余额为：{balanceOfData}</div>
         </div>
       </div>
 
