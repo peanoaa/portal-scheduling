@@ -6,9 +6,10 @@ export default function Header() {
         <div style={{display: 'flex', justifyContent:'space-between',gap: '1rem', alignItems:'center', padding: '1rem 2rem', borderBottom: '1px solid #eaeaea'}}>
             <div >myTransaction</div>
             <div style={{display: 'flex', gap: '1rem', alignItems:'center'}}>
-                <Link href="/">wagmi</Link>
+                <Link href="/wagmi">wagmi</Link>
                 <Link href="/viem">viem</Link>
                 <Link href="/Ethers">Ethers</Link>
+                <Link href="/Test">Test</Link>
                 <ConnectButton />
             </div>
         </div>
