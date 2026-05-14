@@ -69,6 +69,15 @@ export default function Tranfer() {
 
   };
 
+  //原生监听
+  const providerWatch = new ethers.JsonRpcProvider('https://rpc.sepolia.org');
+  const contractWatch = '0x4e72Ee9709da48577C2f1E794bEc0C2219c6Caa6';
+
+  const watchContract = new Contract(contractWatch, abi, providerWatch);
+  watchContract.on("Transfer", () => {
+    setDetected(true);
+  });
+
   // 监控交易
   const [detected, setDetected] = useState(false);
   useEffect(() => {
