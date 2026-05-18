@@ -1,0 +1,1 @@
+export const constactAddress = '0x56682aa855226f3228b374a69aF5017D174372Fe'

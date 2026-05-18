@@ -10,6 +10,9 @@ export default function Header() {
                 <Link href="/viem">viem</Link>
                 <Link href="/Ethers">Ethers</Link>
                 <Link href="/Test">Test</Link>
+                <Link href="/withdraw">Withdraw</Link>
+                <Link href="/stake">Stake</Link>
+                <Link href="/claim">Claim</Link>
                 <ConnectButton />
             </div>
         </div>
