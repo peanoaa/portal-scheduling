@@ -11,6 +11,9 @@ type MetamaskConnectResult = {
 
 const connectMetamask = async (): Promise<MetamaskConnectResult> => {
     //去判断
+    if(!window.ethereum?.isMetaMask){
+        throw new Error('当前 window.ethereum 不是 MetaMask，请检查钱包设置');
+    }
     try {
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         if (!accounts || accounts.length === 0) {

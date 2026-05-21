@@ -47,7 +47,9 @@ export type WalletProviderProps = {//配置
     provider: any;
 }
 
-export interface Wallet {//钱包
+export interface Wallet {
+    chainID: number;
+    address: string;//钱包
     id: string;
     name: string;
     icon: string;

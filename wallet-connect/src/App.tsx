@@ -27,10 +27,10 @@ const chains = [
   },
   {
     id:11155111,
-    name:'Spolia',
+    name:'Sepolia',
     rpcUrls:'https://sepolia.infura.io/v3/d8ed0bd1de8242d998a1405b6932ab33',
     currency:{
-      name:'Spolia Ether',
+      name:'Sepolia Ether',
       symbol:'ETH',
       decimals:18
     },
@@ -55,7 +55,7 @@ function App() {
           <div className='bg-[#f40] w-[40px] h-[20px]'>
             test
           </div>
-          <ConnectionButton/>
+          <ConnectionButton showBalance={true} />
         </WalletProvider>
     </>
   )

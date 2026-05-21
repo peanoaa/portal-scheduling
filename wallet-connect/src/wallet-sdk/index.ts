@@ -1,4 +1,5 @@
-import  ConnectionButton from './components/ConnectionButton'
+import ConnectionButton from './components/ConnectionButton'
 import WalletProvider from './provider'
 
-export {ConnectionButton,WalletProvider}
+export { useWallet } from './provider/useWallet'
+export { ConnectionButton, WalletProvider }

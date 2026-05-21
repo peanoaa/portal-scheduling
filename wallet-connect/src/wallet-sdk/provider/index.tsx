@@ -21,14 +21,6 @@ const WalletContext = createContext<WalletContextValue>({//1.创建一个全局�
     provider: undefined
 })
 
-// eslint-disable-next-line react-hooks/rules-of-hooks
-const WalletMap = useMemo(() => {
-    return wallets?.reduce((acc, wallet) => {
-        acc[wallet.id] = wallet;
-        return acc;
-    }, {} as Record<string, Wallet>);
-},[wallets]);
-
 const WalletProvider: React.FC<WalletProviderProps> = ({//2.定义组件
     children,
     chains,
@@ -36,6 +28,14 @@ const WalletProvider: React.FC<WalletProviderProps> = ({//2.定义组件
     autoConnect,
     wallets
 }) => {
+
+    const WalletMap = useMemo(() => {
+        return wallets?.reduce((acc, wallet) => {
+            acc[wallet.id] = wallet;
+            return acc;
+        }, {} as Record<string, Wallet>);
+    }, [wallets]);
+
     const [state, setState] = useState<WalletStatus>({//3维护状态
         isConnected: false,
         address: '',
@@ -58,10 +58,11 @@ const WalletProvider: React.FC<WalletProviderProps> = ({//2.定义组件
             }
             setState({...state, isConnecting: true, error: null});
             try {
-                await wallet.connector();
-                setState({...state,  error: null, isConnected: true, address: wallet.address, chainID: wallet.chainID});
+                const result = await wallet.connector();
+                setState({...state, isConnecting: false, error: null, isConnected: true, address: result.address, chainID: result.chainId});
+                setIsModalOpen(false); // 连接成功后关闭弹窗
             } catch (error) {
-                setState({...state, error: error as Error});
+                setState({...state, isConnecting: false, error: error as Error});
             }
               
 
@@ -95,19 +96,13 @@ const WalletProvider: React.FC<WalletProviderProps> = ({//2.定义组件
             isOpen={isModalOpen} 
             onClose={() => setIsModalOpen(false)} 
             wallets={wallets} 
-            onSelectWallet={value.connect} 
+            onSelectWallet={(wallet) => value.connect(wallet.id)} 
             connecting={false} 
             error={null} />
         </WalletContext.Provider>
     )
 
 }
-export const useWallet = (): WalletContextValue => {
-    const context = useContext(WalletContext)
-    if (!context) {
-        throw new Error('usewaller must be used within a WalletProvider')
-    }
-    return context;
-} 
 
 export default WalletProvider;
+export { WalletContext }
