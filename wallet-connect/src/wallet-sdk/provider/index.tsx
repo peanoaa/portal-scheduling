@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react'
 import type { Wallet, WalletContextValue, WalletProviderProps, WalletStatus } from '../type'
-import { switchChain } from 'wagmi/actions'
+// import { switchChain } from 'wagmi/actions'
 import WalletModal from '../components/WalletModal'
 
 
@@ -68,7 +68,10 @@ const WalletProvider: React.FC<WalletProviderProps> = ({//2.定义组件
 
         },
         disconnect: async () => {
-
+            setIsModalOpen(false);
+            setState({...state, isConnected: false, address: '', chainID: -1});
+            window.ethereum.removeAllListeners();//移除所有监听
+            window.dispatchEvent(new CustomEvent('wallet-disconnected'));//触发断开连接事件
         },
         switchChain: async () => {
 
