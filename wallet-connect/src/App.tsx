@@ -1,8 +1,8 @@
-import { useState } from 'react'
 import {WalletProvider,ConnectionButton} from './wallet-sdk'
-import { ethers } from 'ethers'
 import type { Wallet } from './wallet-sdk/type';
 import metamaskConnector from './wallet-sdk/connectors/metamesk';
+import { okxWalletConnector } from './wallet-sdk/connectors/okxwallet';
+import { phantomConnector } from './wallet-sdk/connectors/phantom';
 
 declare global {
   interface Window {
@@ -41,20 +41,13 @@ const chains = [
   }
 ]
 
-const wallets: Wallet[] = [metamaskConnector];
+const wallets: Wallet[] = [metamaskConnector,okxWalletConnector,phantomConnector];
 
 function App() {
-  // const [count, setCount] = useState(0)
-
-  const provider = window.ethereum ? new ethers.BrowserProvider(window.ethereum) : null;
 
   return (
-    <>
-      
-        <WalletProvider chains={chains} provider={provider} autoConnect={true} wallets={wallets}>
-          <div className='bg-[#f40] w-[40px] h-[20px]'>
-            test
-          </div>
+    <>      
+        <WalletProvider chains={chains}  autoConnect={true} wallets={wallets}>          
           <ConnectionButton showBalance={true} />
         </WalletProvider>
     </>

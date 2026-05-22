@@ -6,9 +6,8 @@ export interface WalletStatus {//钱包状态
     ensname: string | null;//用户ens名称
     error: Error | null;//错误信息
     chains: Chain[];//区块链网络列表
-    provider: any; 
-
-
+    provider?: any; 
+    balance:string | null;
 }
 
 export interface WalletContextValue extends WalletStatus {//操作
@@ -18,10 +17,6 @@ export interface WalletContextValue extends WalletStatus {//操作
     openModal: () => void;//打开钱包选择模态框
     closeModal: () => void;//关闭钱包选择模态框
 
-    // wallet: Wallet | null;
-    // walletID: string;
-    // walletName: string;
-    // walletIcon: string;
 }
 
 export type Chain = {//网络
@@ -44,7 +39,7 @@ export type WalletProviderProps = {//配置
     chains: Chain[];
     wallets?: Wallet[];
     autoConnect?: boolean;
-    provider: any;
+    provider?: any;
 }
 
 export interface Wallet {
