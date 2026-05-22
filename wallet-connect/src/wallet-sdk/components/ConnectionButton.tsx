@@ -15,7 +15,9 @@ interface ConnectionButtonPrps {
     onBalanceChange?: () => void
 }
 
-
+function toHexChainId(chainId: number): string {
+    return '0x' + BigInt(chainId).toString(16)
+}
 
 const ConnectionButton = ({
     label = 'Connect wallet',
@@ -26,13 +28,50 @@ const ConnectionButton = ({
     onBalanceChange,
 
 }: ConnectionButtonPrps) => {
-    const { disconnect, isConnected, address, chainID, chains, switchChain, openModal, provider, balance } = useWallet()
+    const { disconnect, isConnected, address, chainID, chains, openModal } = useWallet()
 
     const networkPickerRef = useRef<HTMLDivElement>(null)
     const [networkMenuOpen, setNetworkMenuOpen] = useState(false)
-    const effectiveChainId =
-        typeof chainID === 'number' && chainID > 0 ? chainID : chains?.[0]?.id ?? 1
+    const [activeChainId, setActiveChainId] = useState<number>(
+        typeof chainID === 'number' && chainID > 0 ? chainID : 1
+    )
 
+    useEffect(() => {
+        if (typeof chainID === 'number' && chainID > 0) {
+            setActiveChainId(chainID)
+        }
+    }, [chainID])
+
+    useEffect(() => {
+        const eth = (
+            window as Window & {
+                ethereum?: {
+                    on: (ev: string, cb: (...a: unknown[]) => void) => void
+                    removeListener: (ev: string, cb: (...a: unknown[]) => void) => void
+                }
+            }
+        ).ethereum
+        if (!eth?.on) return
+        const onChainChanged = (hex: string) => {
+            try {
+                setActiveChainId(parseInt(hex, 16))
+            } catch {
+                /* ignore */
+            }
+        }
+        eth.on('chainChanged', onChainChanged)
+        return () => eth.removeListener('chainChanged', onChainChanged)
+    }, [])
+
+    useEffect(() => {
+        const onWalletChain = (ev: Event) => {
+            const e = ev as CustomEvent<{ chainId?: number }>
+            const id = e.detail?.chainId
+            if (typeof id === 'number') setActiveChainId(id)
+        }
+        window.addEventListener('wallet-chain-changed', onWalletChain)
+        return () => window.removeEventListener('wallet-chain-changed', onWalletChain)
+    }, [])
 
     useEffect(() => {
         if (!networkMenuOpen) return
@@ -46,60 +85,78 @@ const ConnectionButton = ({
     }, [networkMenuOpen])
 
     //展示余额
-    // const [balance, setBalance] = useState<string | null>('');
-
-    // // 获取余额
-    // useEffect(() => {
-    //     if (!showBalance || !isConnected || !address || !provider) {
-    //       return
-    //     }
-    //     let cancelled = false;
-    //     const fetchBalance = async () => {
-    //       try {
-    //         const bn = await provider.getBalance(address)
-    //         const eth = ethers.formatEther(bn)
-    //         if (!cancelled) {
-    //           setBalance(parseFloat(eth).toFixed(4))
-    //           onBalanceChange?.()
-    //         }
-    //       } catch (e) {
-    //         console.error('Failed to fetch balance:', e)
-    //         if (!cancelled) setBalance('0.0000')
-    //       }
-    //     }
-    //     //链接成功，换链，换账户刷新一次
-    //     void fetchBalance();
-
-    //     const onManualRefresh = () => {
-    //         void fetchBalance();
-    //     }
-
-    //     window.addEventListener('wallet-balance-refresh', onManualRefresh);
-
-    //     return () => {
-    //         cancelled = true;
-    //         window.removeEventListener('wallet-balance-refresh', onManualRefresh);
-    //     }
-    //   }, [showBalance, isConnected, address, provider])
-    const currentChain = chains?.find((c) => c.id === effectiveChainId)
-    const currentChainName =
-        currentChain?.name ?? (chains?.[0]?.name ?? 'Ethereum')
-    const balanceLabel = 
-        `${Number(balance || 0) < 0.0001 ? '0' : Number(balance || 0).toFixed(4)} ${currentChain?.currency.symbol ?? 'ETH'}`
-
+    const [balance, setBalance] = useState<string | null>('');
+    
+    // 获取余额
+    useEffect(() => {
+        let isMounted = true;
+        
+        const fetchBalance = async () => {
+            try {
+                if (!isConnected || !address || !(window as any).ethereum) {
+                    if (isMounted) setBalance('');
+                    return;
+                }
+                const provider = new ethers.BrowserProvider((window as any).ethereum);
+                const balanceBigNumber = await provider.getBalance(address);
+                // 转换为 ETH 单位，保留4位小数
+                const balanceEth = ethers.formatEther(balanceBigNumber);
+                if (isMounted) setBalance(parseFloat(balanceEth).toFixed(4));
+            } catch (error) {
+                console.error('Failed to fetch balance:', error);
+                if (isMounted) setBalance('0.0000');
+            }
+        };
+        
+        fetchBalance();
+        
+        // 清理函数，防止组件卸载后更新状态
+        return () => { isMounted = false; };
+    }, [isConnected, address, activeChainId]);
 
     const switchWalletChain = async (chain: Chain) => {
+        const eth = window.ethereum
+        if (!eth?.request) return
+        const chainIdHex = toHexChainId(chain.id)
 
         try {
-            await switchChain(String(chain.id))  // 与 type 里 chainID: string 一致
+            await eth.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: chainIdHex }],
+            })
+            setActiveChainId(chain.id)
             setNetworkMenuOpen(false)
-        } catch (e) {
-            console.warn('Switch chain failed', e)
+        } catch (e: unknown) {
+            const err = e as { code?: number }
+            if (err?.code !== 4902) {
+                console.warn('Switch chain cancelled or failed', e)
+                return
+            }
+            try {
+                await eth.request({
+                    method: 'wallet_addEthereumChain',
+                    params: [
+                        {
+                            chainId: chainIdHex,
+                            chainName: chain.name,
+                            rpcUrls: [chain.rpcUrls],
+                            nativeCurrency: chain.currency,
+                            blockExplorerUrls: [chain.blockExplorer.url],
+                        },
+                    ],
+                })
+                setActiveChainId(chain.id)
+                setNetworkMenuOpen(false)
+            } catch (addErr) {
+                console.warn('Add Ethereum chain cancelled or failed', addErr)
+            }
         }
-
     }
 
-   
+    const currentChain = chains?.find((c) => c.id === activeChainId)
+    const currentChainName =
+        currentChain?.name ?? (chains?.[0]?.name ?? 'Ethereum')
+
     const sizeClasses = {
         sm: 'text-sm px-3 py-1.5',
         md: 'text-base px-4 py-2',
@@ -117,8 +174,8 @@ const ConnectionButton = ({
     // 地址缩短显示（设计稿样式：0x7b40……）
     const shortAddress = address ? `${address.slice(0, 6)}......` : ''
 
-    // const balanceLabel =
-    //     `${Number(balance || 0) < 0.0001 ? '0' : Number(balance || 0).toFixed(4)} ${currentChain?.currency.symbol ?? 'ETH'}`
+    const balanceLabel =
+        `${Number(balance || 0) < 0.0001 ? '0' : Number(balance || 0).toFixed(4)} ${currentChain?.currency.symbol ?? 'ETH'}`
 
     if (!isConnected) {
         return (
@@ -163,9 +220,10 @@ const ConnectionButton = ({
                                     <button
                                         type="button"
                                         role="option"
-                                        aria-selected={c.id === effectiveChainId}
-                                        className={`flex w-full items-center px-4 py-2.5 text-left text-sm hover:bg-neutral-50 ${c.id === effectiveChainId ? 'font-semibold text-neutral-900 bg-neutral-50' : 'text-neutral-700'
-                                            }`}
+                                        aria-selected={c.id === activeChainId}
+                                        className={`flex w-full items-center px-4 py-2.5 text-left text-sm hover:bg-neutral-50 ${
+                                            c.id === activeChainId ? 'font-semibold text-neutral-900 bg-neutral-50' : 'text-neutral-700'
+                                        }`}
                                         onClick={() => void switchWalletChain(c)}
                                     >
                                         {c.name}
