@@ -1,22 +1,21 @@
 import { abi } from '../../abi/abi'
-import { Address, formatEther, parseEther, formatUnits } from 'viem'
+import { Address, formatEther } from 'viem'
 import styles from '../../styles/Home.module.css'
 import { useEffect, useState } from 'react'
-import { useAccount, useReadContract, useWriteContract, useWatchContractEvent } from 'wagmi'
-import { log } from 'util'
-
-let countvlaue = 0;
+import { useWallet } from '@leimoyi/wallet-connect-sdk'
+import { useReadContract, useWatchContractEvent } from 'wagmi'
+import { ethers } from 'ethers'
 
 export default function Withdraw() {
 
-    const { address } = useAccount()
     const contractAddress = "0x56682aa855226f3228b374a69aF5017D174372Fe";
     const stakeid = 0;
     const [stakeResult, setStakeResult] = useState('');//质押池余额
     const [withdrawResult, setWithdrawResult] = useState('');//可提取输入框
     const [reviewResult, setReviewResult] = useState('');//审核输入框
     const [canWithdrawResult, setCanWithdrawResult] = useState('');//可提取金额
-
+    const [isPending, setIsPending] = useState(false);
+    const { address, provider } = useWallet()
 
 
 
@@ -41,9 +40,7 @@ export default function Withdraw() {
 
 
     //UnstakeETH
-    const { writeContract, isPending: isPendingWrite, error, data: txHash } = useWriteContract({
-    })
-    const handleReview = () => {
+    const handleReview = async () => {
         if (!stakeResult || Number(stakeResult) <= 0) {
             alert('请先质押');
             return;
@@ -56,17 +53,21 @@ export default function Withdraw() {
             alert('审核金额不能大于质押金额');
             return;
         }
-        writeContract({
-            abi,
-            address: contractAddress as Address,
-            functionName: 'unstake',
-            args: [BigInt(stakeid), parseEther(withdrawResult)]
-        })
-        // countvlaue += Number(withdrawResult);
-        // console.log(countvlaue,'countvlaue');
-        // setCanWithdrawResult(countvlaue);
-
-
+        if (!provider) {
+            alert('钱包未就绪');
+            return;
+        }
+        setIsPending(true);
+        try {
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(contractAddress, abi, signer);
+            const tx = await contract.unstake(BigInt(stakeid), ethers.parseEther(withdrawResult));
+            await tx.wait();
+        } catch (error: any) {
+            alert('审核失败: ' + (error?.message || String(error)));
+        } finally {
+            setIsPending(false);
+        }
     }
 
     //监听审核结果
@@ -76,8 +77,6 @@ export default function Withdraw() {
         eventName: 'RequestUnstake',
         onLogs() {
             alert('审核成功');
-            //审核成功，把输入框的值给canWithdrawResult
-            // setCanWithdrawResult(countvlaue);
             //清空输入框
             setWithdrawResult('');
             //更新质押池余额
@@ -138,44 +137,29 @@ export default function Withdraw() {
 
 
     //提取
-    const handleWithdraw = () => {
+    const handleWithdraw = async () => {
         if (!canWithdrawResult || Number(canWithdrawResult) <= 0) {
             alert('请先审核');
             return;
         }
-        writeContract({
-            abi,
-            address: contractAddress as Address,
-            functionName: 'withdraw',
-            args: [BigInt(stakeid)]
-
-        })
-        // //更新合于余额
-        // result.refetch().then((res) => {
-        //     const d = res.data;
-        //     if(d !== undefined){
-        //         setStakeResult(formatEther(d as bigint));
-        //     }
-        // });
-        // //更新可提取金额
-        // result2.refetch().then((res) => {
-        //     const d = res.data;
-        //     if(d !== undefined){
-        //         setCanWithdrawResult(formatEther(d[1] as bigint));
-        //     }
-        // });
-        // //更新审核金额
-        // result2.refetch().then((res) => {
-        //     const d = res.data;
-        //     if(d !== undefined){
-        //         setReviewResult(formatEther(d[0] as bigint));
-        //     }
-        // });
+        if (!provider) {
+            alert('钱包未就绪');
+            return;
+        }
+        setIsPending(true);
+        try {
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(contractAddress, abi, signer);
+            const tx = await contract.withdraw(BigInt(stakeid));
+            await tx.wait();
+        } catch (error: any) {
+            alert('提取失败: ' + (error?.message || String(error)));
+        } finally {
+            setIsPending(false);
+        }
     }
 
     
-
-
 
 
 
@@ -205,11 +189,11 @@ export default function Withdraw() {
                     value={withdrawResult}
                     onChange={(e) => setWithdrawResult(e.target.value)}
                 />
-                <button className={styles.button} onClick={handleReview} disabled={isPendingWrite}>审核</button>
+                <button className={styles.button} onClick={handleReview} disabled={isPending}>审核</button>
             </div>
             <div>
 
-                <button className={styles.button} onClick={handleWithdraw} disabled={isPendingWrite}>提取</button>
+                <button className={styles.button} onClick={handleWithdraw} disabled={isPending}>提取</button>
             </div>
 
         </div>

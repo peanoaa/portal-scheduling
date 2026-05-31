@@ -1,29 +1,19 @@
 import styles from '../../styles/Home.module.css'
 import { useEffect, useState } from 'react'
 import { abi } from '../../abi/abi'
-import {
-  useAccount,
-  useBalance,
-  useReadContract,
-  useWaitForTransactionReceipt,
-  useWatchContractEvent,
-  useWriteContract,
-} from 'wagmi'
-import { Address, formatEther, parseEther, formatUnits } from 'viem'
+import { useWallet } from '@leimoyi/wallet-connect-sdk'
+import { useReadContract, useWatchContractEvent } from 'wagmi'
+import { Address, formatEther } from 'viem'
+import { ethers }  from 'ethers'
 
 export default function Claim() {
 
   const [claimResult, setClaimResult] = useState('');
+  const [isPending, setIsPending] = useState(false);
   const contractAddress = "0x56682aa855226f3228b374a69aF5017D174372Fe";
-  const { address } = useAccount();//获取当前钱包地址
-  const stakeid = 0; //质押id，示例值为1，实际使用时根据需求设置
+  const { address, provider } = useWallet()
+  const stakeid = 0;
 
-  const {
-    writeContract,
-    isPending: isPendingWrite,
-    error,
-    data: txHash,
-  } = useWriteContract();
   //查询pendingMetaNode
   const pendingMetaNode = useReadContract({
     address: contractAddress as Address,
@@ -39,13 +29,29 @@ export default function Claim() {
     }
   }, [pendingMetaNode.data])
 
-  const handleStake = () => {
-    writeContract({
-      abi,
-      address: contractAddress as Address,
-      functionName: 'claim',
-      args: [BigInt(stakeid)],
-    })
+  const handleStake = async () => {
+    if (!provider) {
+      alert('钱包未就绪');
+      return;
+    }
+    setIsPending(true);
+    try {
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(contractAddress, abi, signer);
+      const tx = await contract.claim(BigInt(stakeid));
+      await tx.wait();
+      alert('提取成功');
+      pendingMetaNode.refetch().then((res) => {
+        const d = res.data;
+        if (d !== undefined) {
+          setClaimResult(formatEther(d));
+        }
+      });
+    } catch (error: any) {
+      alert('提取失败: ' + (error?.message || String(error)));
+    } finally {
+      setIsPending(false);
+    }
   }
   //提取成功后刷新
   useWatchContractEvent({
@@ -76,8 +82,8 @@ export default function Claim() {
         readOnly
         
       />
-      <button className={styles.button} onClick={handleStake} disabled={isPendingWrite}>
-        {isPendingWrite ? '提取中...' : '提取'}
+      <button className={styles.button} onClick={handleStake} disabled={isPending}>
+        {isPending ? '提取中...' : '提取'}
       </button>
     </div>
   );

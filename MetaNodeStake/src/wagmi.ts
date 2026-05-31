@@ -1,4 +1,4 @@
-import { getDefaultConfig } from '@rainbow-me/rainbowkit';
+import { http, createConfig, injected } from 'wagmi';
 import {
   arbitrum,
   base,
@@ -8,17 +8,30 @@ import {
   sepolia,
 } from 'wagmi/chains';
 
-export const config = getDefaultConfig({
-  appName: 'RainbowKit App',
-  projectId: '38382df7db92628c0b5b4d252327eda3',
-  chains: [
-    mainnet,
-    polygon,
-    optimism,
-    arbitrum,
-    base,
-    sepolia,
-    ...(process.env.NEXT_PUBLIC_ENABLE_TESTNETS === 'true' ? [sepolia] : []),
+const chains = [
+  mainnet,
+  polygon,
+  optimism,
+  arbitrum,
+  base,
+  sepolia,
+] as const;
+
+export const config = createConfig({
+  chains,
+  connectors: [
+    injected({ target: 'metaMask' }),
+    injected({ target: 'okxWallet' }),
+    injected({ target: 'phantom' }),
   ],
+  transports: {
+    [mainnet.id]: http(),
+    [polygon.id]: http(),
+    [optimism.id]: http(),
+    [arbitrum.id]: http(),
+    [base.id]: http(),
+    [sepolia.id]: http(),
+  },
+  multiInjectedProviderDiscovery: false,
   ssr: true,
 });

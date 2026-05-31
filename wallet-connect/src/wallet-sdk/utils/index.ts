@@ -1,6 +1,8 @@
 
 import { ethers } from 'ethers'
 
+export type {Wallet, Chain, WalletProviderProps } from '../type'
+
 //将链id转换为十六进制
 export function toHexChainId(chainId: number) {
     return '0x' + BigInt(chainId).toString(16)
@@ -20,7 +22,7 @@ export function getEipByWalletId(walletId: string) {
         case 'OkxWallet':
             return (window as any).okxwallet ?? null
         case 'phantom':
-            return (window as any).phantom ?? null
+            return (window as any).phantom?.ethereum ?? null
         default:
             return null
     }

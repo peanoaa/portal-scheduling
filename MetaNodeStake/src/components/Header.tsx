@@ -1,5 +1,6 @@
 import  Link from 'next/link';
-import { ConnectButton} from '@rainbow-me/rainbowkit';
+// import { ConnectButton} from '@rainbow-me/rainbowkit';
+import { ConnectionButton } from '@leimoyi/wallet-connect-sdk';
 
 export default function Header() {
     return (
@@ -13,7 +14,7 @@ export default function Header() {
                 <Link href="/withdraw">Withdraw</Link>
                 <Link href="/stake">Stake</Link>
                 <Link href="/claim">Claim</Link>
-                <ConnectButton />
+                <ConnectionButton />
             </div>
         </div>
     )
