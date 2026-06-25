@@ -1,331 +1,196 @@
-// DApp Provider 服务文件
-// 实现一个类似 MetaMask window.ethereum 的 Provider
-// 让网页 DApp 可以通过标准 JSON-RPC 方法和钱包交互
+//注入到网页的钱包对象
 
-// DApp Provider Service - 实现EIP-1102和EIP-747标准、
+// 这个函数不是普通 import 后直接调用的业务函数，而是会被 chrome.scripting.executeScript 注入到网页中执行
+// 它的核心作用是给网页挂载：
+// window.myWallet
+// 最终：
+// window.myWallet = myWallet
+// window.myWalletInjected = true
+// console.log("myWallet 已经注入到页面"); 
+// 这样 DApp 页面就可以写：
+// await window.myWallet.connect()
+// await window.myWallet.getAccount()
+// await window.myWallet.signMessage("hello")
+// await window.myWallet.disconnect()
 
-//钱包状态来源
-import { useWalletStore } from '@/stors/walletStore';
+export default function injectMyWallet() {
+    console.log('injected-helper');
 
-//定义请求和provider接口
-//描述一个Dapp请求
-interface DappRequest {
-    id: string;//请求id
-    method: string;//rpc方法名，如：eth_requestAccounts
-    params: any[];//参数数组
-    origin: string;//请求来源域名
-}
-
-//模仿EIP-1193 provider形态
-interface WalletProvider {
-    isMyWallet: boolean;//标识这是你自己的钱包 Provider
-    request: (request: { method: string; params?: any[] }) => Promise<any>;//DApp 调用钱包能力的统一入口
-    on: (event: string, handler: Function) => void;//监听事件，比如 accountsChanged
-    removeListener: (event: string, handler: Function) => void;//移除事件监听
-    selectedAddress: string | null;//当前选中的账户地址
-    chainId: string | null;//当前链 ID，十六进制格式，例如 0x1
-    networkVersion: string | null;//当前网络 ID，十进制字符串，例如 1
-}
-
-//实现MyWalletProvider类
-
-class MyWalletProvider implements WalletProvider {
-
-    //暴露给Dapp使用
-    //使用
-    //if (window.ethereum?.isMyWallet) {
-    // 当前钱包是你的钱包
-    // }
-    public isMyWallet = true;//标识这是你自己的钱包 Provider
-    public selectedAddress: string | null = null;//当前选中的账户地址
-    public chainId: string | null = null;//当前链 ID，十六进制格式，例如 0x1
-    public networkVersion: string | null = null;//当前网络ID
-
-    //内部属性
-    private eventListeners: Map<string, Function[]> = new Map();//用来保存事件监听器
-    //例如：window.ethereum.on('accountsChanged', handler)会把 handler 存到 eventListeners 里。
-    private connectedAccounts: string[] = [];//保存已经授权给 DApp 的账户地址列表
-
-    //构造函数
-    //创建 Provider 实例时，会立刻同步一次钱包状态
-    //也就是说初始化时会从 walletStore 里读取：
-    //当前账户
-    //当前网络
-    //是否锁定
-    //等状态，更新到内部属性里。
-    constructor() {
-        this.updateWalletState();
+    //防止重复注入
+    if (window.myWallet && window.myWalletInjected) {
+        return
     }
 
-    //Zustand 钱包状态同步到 Provider 属性
-    private updateWalletState() {
-        //获取钱包状态
-        const store = useWalletStore.getState();
-        //如果当前账户存在且未锁定，则更新 Provider 属性
-        if (store.currentAccount && !store.isLocked) {
-            this.selectedAddress = store.currentAccount.address;//当前选中的账户地址
-            this.chainId = `0x${store.currentNetwork.chainId.toString(16)}`;//当前链 ID，十六进制格式，例如 0x1
-            this.networkVersion = store.currentNetwork.chainId.toString();//当前网络 ID，十进制字符串，例如 1
-        } else {
-            this.selectedAddress = null;
-            this.chainId = null;
-            this.networkVersion = null;
-        }
-    }
+    //消息类型常量
+    // 这里和 type_constant.ts 里重复定义了一份。
+    // 原因是：injectMyWallet 会被作为函数注入到页面主世界执行。注入执行时，
+    // 它不是正常模块运行环境，不能可靠依赖外部 import 的变量。
+    // 所以这些常量必须写在函数内部，确保函数被序列化注入后还能独立运行。
+    const WALLET_CONNECT = 'WALLET_CONNECT';
+    const WALLET_GET_ACCOUNT = 'WALLET_GET_ACCOUNT';
+    const WALLET_SIGN_MESSAGE = 'WALLET_SIGN_MESSAGE';
+    const WALLET_DISCONNECT = 'WALLET_DISCONNECT';
 
-    // 实现各种Dapp请求方法
-    //核心函数，Dapp调用钱包的统一入口
-    async request(request: { method: string; params?: any[] }): Promise<any> {
-        const { method, params } = request;
-        switch (method) {
-            // 用于请求连接钱包账户。对应 EIP-1102。
-            case 'eth_requestAccounts':
-                return await this.requestAccounts();
+    // requestId的作用
+    //请求id,每次请求都生成唯一id，因为网页可能同事发多个请求，所有需要
+    const generateRequestId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-            // 返回当前已经授权给 DApp 的账户列表
-            case 'eth_accounts':
-                return this.connectedAccounts;
+    //链接钱包
+    // 网页调用 window.myWallet.connect() 时，它不会直接连钱包，而是发一个 window.postMessage 消息出去。
+    // 这个消息会被 message-bridge.ts 接收到，然后转发给 background。
+    // 之后它注册一个监听器等待响应：
+    // 当收到正确响应时：成功：resolve(account)，失败：reject(error)，还有超时处理
+    const myWallet = {
+        connect: async () => {
+            console.log('connect');
 
-            //返回当前链 ID，十六进制字符串
-            case 'eth_chainId':
-                this.updateWalletState();
-                return this.chainId;
+            return new Promise((resolve, reject) => {
+                console.log('发送消失到，message-bridge.ts');
+                const requestId = generateRequestId()
+                //打印信息
+                console.log('requestId :', requestId);
+                console.log("aaaaaa");
+                console.log(WALLET_CONNECT);
 
-            //返回当前网络 ID，十进制字符串
-            case 'net_version':
-                this.updateWalletState();
-                return this.networkVersion;
-
-            //用于让 DApp 请求钱包添加某个代币。对应 EIP-747。
-            case 'wallet_watchAsset':
-                return this.handleWatchAsset(params[0]);
-
-            //用于让 DApp 请求添加一条新的 EVM 网络。
-            case 'wallet_addEthereumChain':
-                return this.handleAddEthereumChain(params[0]);
-
-            //用于让 DApp 请求切换当前网络
-            case 'wallet_switchEthereumChain':
-                return this.handleSwitchEthereumChain(params[0]);
-
-            //用于发送交易
-            case 'eth_sendTransaction':
-                return this.handleSendTransaction(params[0]);
-
-            //用于普通消息签名。
-            case 'eth_sign':
-            case 'personal_sign':
-                return this.handleSign(method, params);
-
-            //于结构化数据签名，例如 EIP-712。
-            case 'eth_signTypedData':
-            case 'eth_signTypedData_v3':
-            case 'eth_signTypedData_v4':
-                return this.handleSignTypedData(method, params);
-
-            default:
-                // 不是上面列出的特殊钱包方法，就转发到当前网络的 JSON-RPC Provider
-                const store = useWalletStore.getState();
-                const provider = store.getProvider();
-                if (provider) {
-                    return provider.send(method, params);
-                }
-                throw new Error(`Unsupported method: ${method}`);
-        }
-    }
-
-    //连接钱包账户，EIP-1102: eth_requestAccounts
-    // 如果钱包锁定，拒绝连接。
-    // 如果没有当前账户，拒绝连接。
-    // 否则直接把当前账户授权给 DApp。
-    // 触发 accountsChanged 事件。
-    // 返回账户地址数组。
-    private async requestAccounts(): Promise<string[]> {
-        return new Promise((resolve, reject) => {
-            //获取钱包状态
-            const store = useWalletStore.getState();
-
-            //如果钱包锁定，拒绝连接。
-            if (store.isLocked) {
-                reject(new Error('Wallet is locked'));
-                return;
-            }
-
-            //如果没有当前账户，拒绝连接。
-            if (!store.currentAccount) {
-                reject(new Error('No current account'));
-                return;
-            }
-
-            // 在实际实现中，这里应该显示一个确认对话框让用户批准
-            // 目前简化处理，直接返回当前账户
-            //直接把当前账户授权给 DApp。
-            const account = store.currentAccount.address;
-            this.connectedAccounts = [account];//保存已经授权给 DApp 的账户地址列表
-            this.selectedAddress = account;//当前选中的账户地址
-            this.emit('accountsChanged', [account]);//触发 accountsChanged 事件
-            resolve([account]);//返回账户地址数组
-        })
-
-    }
-
-
-    //让 DApp 请求添加代币
-    private async handleWatchAsset(params: any): Promise<boolean> {
-        return new Promise((resolve, reject) => {
-            try {
-                // 从参数中取出：
-                const { type, options } = params;
-                //获取钱包状态
-                const store = useWalletStore.getState();
-                // 检查代币类型是否支持：
-                if (!['ERC20', 'ERC721', 'ERC1155'].includes(type)) {
-                    reject(new Error('Unsupported asset type'));
-                    return;
-                }
-                // 在实际实现中，这里应该显示一个确认对话框
-                // 目前简化处理，直接添加代币
-                // 构造 token 对象：
-                const token = {
-                    address: options.address,
-                    symbol: options.symbol,
-                    name: options.name,
-                    decimals: options.decimals || 18,
-                    type: type as 'ERC20' | 'ERC721' | 'ERC1155',
-                    image: options.image,
+                //向桥接发送链接请求
+                // 这个消息会被 message-bridge.ts 接收到，然后转发给 background。
+                const message = {
+                    type: WALLET_CONNECT,
+                    requestId,
+                    from: 'injected-helper',
                 }
 
-                store.addToken(token);
-                resolve(true);
+                // window.postMessage(message, '*')
+                console.log(message);
+                console.log(window.location.origin);
 
-            } catch (error) {
-                reject(error);
-            }
-        })
-    }
+                // 发送到所有域
+                window.postMessage(message, "*")
 
-    // 添加一条 EVM 网络
-    //它会从 DApp 传入的参数中构造项目内部的 Network 对象
-    private async handleAddEthereumChain(params: any): Promise<null> {
-        return new Promise((resolve, reject) => {
-            try {
-                const store = useWalletStore.getState();
-                const network = {
-                    id: params.chainName.toLowerCase().replace(/\s+/g, '-'),
-                    name: params.chainName,
-                    rpcUrl: params.rpcUrls[0],
-                    chainId: parseInt(params.chainId, 16),
-                    symbol: params.nativeCurrency.symbol,
-                    blockExplorerUrl: params.blockExplorerUrls[0],
-                };
-                store.addNetwork(network);
-                resolve(null);
+                //监听链接结果
+                const handleResponse = (event: MessageEvent) => {
+                    console.log("handleResponse:", event);
 
-            } catch (error) {
-                reject(error);
-            }
+                    if (!_isValidResponse(event, requestId)) return
+                    //清除监听
+                    window.removeEventListener('message', handleResponse);
 
-        })
-
-    }
-    
-    private async handleSwitchEthereumChain(params: any): Promise<null> {
-        return new Promise((resolve, reject) => {
-          try {
-            const store = useWalletStore.getState();
-            const chainId = parseInt(params.chainId, 16);
-            const network = store.networks.find(net => net.chainId === chainId);
-    
-            if (!network) {
-              reject(new Error('Network not found'));
-              return;
-            }
-    
-            store.switchNetwork(network.id);
-            this.emit('chainChanged', params.chainId);
-            resolve(null);
-          } catch (error) {
-            reject(error);
-          }
-        });
-      }
-    
-      private async handleSendTransaction(params: any): Promise<string> {
-        // 在实际实现中，这里应该打开发送交易的界面
-        // 目前返回模拟的交易哈希
-        throw new Error('Please use the wallet interface to send transactions');
-      }
-    
-      private async handleSign(method: string, params: any[]): Promise<string> {
-        // 在实际实现中，这里应该打开签名确认界面
-        throw new Error('Signing not implemented');
-      }
-    
-      private async handleSignTypedData(method: string, params: any[]): Promise<string> {
-        // 在实际实现中，这里应该打开签名确认界面
-        throw new Error('Typed data signing not implemented');
-      }
-    
-      on(event: string, handler: Function): void {
-        if (!this.eventListeners.has(event)) {
-          this.eventListeners.set(event, []);
-        }
-        this.eventListeners.get(event)!.push(handler);
-      }
-    
-      removeListener(event: string, handler: Function): void {
-        const listeners = this.eventListeners.get(event);
-        if (listeners) {
-          const index = listeners.indexOf(handler);
-          if (index > -1) {
-            listeners.splice(index, 1);
-          }
-        }
-      }
-
-
-    private emit(event: string, data?: any): void {
-        const listeners = this.eventListeners.get(event);
-        if (listeners) {
-            listeners.forEach(listener => {
-                try {
-                    listener(data);
-                } catch (error) {
-                    console.error('Error in event listener:', error);
+                    if (event.data.success) {
+                        resolve(event.data.data.account);
+                    } else {
+                        reject(event.data.error || '链接失败');
+                    }
                 }
-            });
+                window.addEventListener('message', handleResponse);
+                //超时处理
+                setTimeout(() => {
+                    window.removeEventListener('message', handleResponse);
+                    reject(new Error('连接超时'));
+                }, 3000)
+            })
+        },
+
+        //获取当前账户信息，只读取，不触发连接逻辑
+        getAccount: async () => {
+            return new Promise((resolve, reject) => {
+                const requestId = generateRequestId();
+                const message = {
+                    type: WALLET_GET_ACCOUNT,
+                    requestId,
+                    from: 'injected-helper',
+                }
+                window.postMessage(message, "*")
+
+                const handleResponse = (event: MessageEvent) => {
+                    if (!_isValidResponse(event, requestId)) return
+
+                    window.removeEventListener('message', handleResponse);
+                    if (event.data.success) {
+                        resolve(event.data.data.account);
+                    } else {
+                        reject(event.data.error || '获取账户信息失败');
+                    }
+                }
+                window.addEventListener('message', handleResponse);
+            })
+        },
+
+        //签名信息
+        signMessage: async (message: string) => {
+            console.log('message:', message);
+            return new Promise((resolve, reject) => {
+                const requestId = generateRequestId();
+                const messageData = {
+                    type: WALLET_SIGN_MESSAGE,
+                    requestId,
+                    from: 'injected-helper',
+                    data: {
+                        message,
+                    }
+                }
+
+                console.log(messageData);
+                window.postMessage(messageData, window.location.origin)
+                console.log('22');
+                const handleResponse = (event: MessageEvent) => {
+                    console.log(event);
+
+                    if (!_isValidResponse(event, requestId)) return
+                    window.removeEventListener('message', handleResponse);
+
+                    if (event.data.success) {
+                        resolve(event.data.data.signature);
+                    } else {
+                        reject(event.data.error || '签名失败');
+                    }
+                }
+                window.addEventListener('message', handleResponse);
+                setTimeout(() => {
+                    window.removeEventListener('message', handleResponse);
+                    reject(new Error('签名超时'));
+                }, 3000)
+            })
+        },
+
+        //断开连接
+        disconnect: async () => {
+            return new Promise((resolve, reject) => {
+                const requestId = generateRequestId();
+                const message = {
+                    type: WALLET_DISCONNECT,
+                    requestId,
+                    from: 'injected-helper',
+                }
+                window.postMessage(message, "*")
+                const handleResponse = (event: MessageEvent) => {
+
+                    if (!_isValidResponse(event, requestId)) return
+
+                    window.removeEventListener('message', handleResponse);
+                    resolve(true);
+                }
+                window.addEventListener('message', handleResponse);
+            })
         }
     }
 
+
+    //这个函数保证只处理符合预期的响应。
+    // 它检查：
+    // 消息来源是当前 window
+    // 有 data
+    // data.from 是 message-bridge
+    // requestId 和当前请求一致
+    // 这可以避免页面上其他脚本发来的无关 message 被误处理。
+    function _isValidResponse(event: MessageEvent, requestId: string) {
+        return event.source === window &&
+               event.data && 
+               event.data.from === 'message-bridge' &&
+               event.data.requestId === requestId;
+    }
+
+    window.myWallet = myWallet;
+    window.myWalletInjected = true;
+    console.log('mywallet,已经注入到页面');
+    
 }
-
-
-
-// 创建provider实例
-export const myWalletProvider = new MyWalletProvider();
-
-// 注入到window对象 (模拟content script)
-export const injectProvider = () => {
-  if (typeof window !== 'undefined') {
-    // 注入到window.ethereum (兼容MetaMask)
-    (window as any).ethereum = myWalletProvider;
-
-    // 注入到window.mywallet
-    (window as any).mywallet = myWalletProvider;
-
-    // 触发ethereum注入事件
-    window.dispatchEvent(new Event('ethereum#initialized'));
-  }
-};
-
-// 在应用启动时自动注入
-if (typeof window !== 'undefined') {
-  injectProvider();
-}
-
-
-
-//实现事件监听机制
-
-
-//创建provider实例注入到window.ethereum和window.mywallet

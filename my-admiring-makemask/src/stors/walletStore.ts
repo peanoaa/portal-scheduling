@@ -240,7 +240,7 @@ export const useWalletStore = create<WalletStore>()(
                 //解密助词器
                 const decryptedMnemonic = AES.decrypt(state.mnemonic, state.password).toString(enc.Utf8);
                 //把助记词转成 seed
-                const seedBuffer = bip39.mnemonicToSeed(decryptedMnemonic);
+                const seedBuffer = bip39.mnemonicToSeedSync(decryptedMnemonic);
                 // 转成 Uint8Array
                 const seed = new Uint8Array(seedBuffer);
                 //生成钱包
