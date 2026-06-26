@@ -15,7 +15,7 @@ const Index = () =>{
     if(accounts.length === 0){
         return <WalletSetup />
     }
-    //如果钱包被锁定，显示页面
+    // 如果钱包被锁定，显示页面
     if(isLocked){
         return <WalletUnlock />
     } 

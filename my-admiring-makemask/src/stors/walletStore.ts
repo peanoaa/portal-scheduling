@@ -26,7 +26,7 @@ import { type Network, type Token, type WalletAccount, type WalletState, DEFAULT
 //导入助记词生成库
 import * as bip39 from 'bip39';//？？？？
 import { AES, SHA256, enc } from 'crypto-js';//？？？
-import { ethers } from 'ethers';
+import { ethers, HDNodeWallet, Wallet, JsonRpcProvider } from 'ethers';
 import { log } from 'node:console';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -70,7 +70,7 @@ interface WalletStore extends WalletState {
 
     //工具方法
     //根据当前网络的 rpcUrl 创建 ethers.JsonRpcProvider，用于读链上数据、发交易。
-    getProvider: () => ethers.JsonRpcProvider | null;
+    getProvider: () => JsonRpcProvider | null;
     //校验输入密码是否与已保存的密码哈希一致。
     isValidPassword: (password: string) => boolean;
 
@@ -119,32 +119,45 @@ export const useWalletStore = create<WalletStore>()(
                 console.log('seed', seed);
                 console.log('mnemonic', mnemonic);
                 console.log('seedBuffer', seedBuffer);
+                debugger
+                try {
+                    //生成钱包
+                    const hdNode = HDNodeWallet.fromSeed(seed)
+                    //生成账户
+                    const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
+                    console.log("hdNode", hdNode);
+                    console.log("wallet", wallet);
+                    //账户对象
+                    const account: WalletAccount = {
+                        address: wallet.address,
+                        privateKey: wallet.privateKey,
+                        name: 'Account 1',
+                        index: 0
 
-                //生成钱包
-                const hdNode = ethers.HDNodeWallet.fromSeed(seed)
-                //生成账户
-                const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
-                //账户对象
-                const account: WalletAccount = {
-                    address: wallet.address,
-                    privateKey: wallet.privateKey,
-                    name: 'Account 1',
-                    index: 0
+                    }
+                    console.log("account", account);
+
+                    //使用 AES.encrypt 加密助记词和私钥。
+                    const encryptedMnemonic = AES.encrypt(mnemonic, password).toString();
+                    const encryptedPrivateKey = AES.encrypt(account.privateKey, password).toString();
+
+                    //使用 SHA256(password) 保存密码哈希。
+                    set({
+                        isLocked: false,
+                        accounts: [{ ...account, privateKey: encryptedPrivateKey }],
+                        currentAccount: account,
+                        mnemonic: encryptedMnemonic,
+                        password: SHA256(password).toString(),
+                    })
+
+                    return { mnemonic, account };
+                } catch (error) {
+                    console.error("error", error);
+
                 }
-                //使用 AES.encrypt 加密助记词和私钥。
-                const encryptedMnemonic = AES.encrypt(mnemonic, password).toString();
-                const encryptedPrivateKey = AES.encrypt(account.privateKey, password).toString();
 
-                //使用 SHA256(password) 保存密码哈希。
-                set({
-                    isLocked: false,
-                    accounts: [{ ...account, privateKey: encryptedPrivateKey }],
-                    currentAccount: account,
-                    mnemonic: encryptedMnemonic,
-                    password: SHA256(password).toString(),
-                })
 
-                return { mnemonic, account };
+
             },
 
             // 通过助记词导入钱包
@@ -158,7 +171,7 @@ export const useWalletStore = create<WalletStore>()(
                 // 转成 Uint8Array
                 const seed = new Uint8Array(seedBuffer);
                 //生成钱包
-                const hdNode = ethers.HDNodeWallet.fromSeed(seed);
+                const hdNode = HDNodeWallet.fromSeed(seed);
                 //生成账户
                 const wallet = hdNode.derivePath("m/44'/60'/0'/0/0");
 
@@ -187,7 +200,7 @@ export const useWalletStore = create<WalletStore>()(
             importPrivateKey: async (privateKey: string, password: string, name = 'Imported Account') => {
                 //用 new ethers.Wallet(privateKey) 校验并生成钱包。
                 try {
-                    const wallet = new ethers.Wallet(privateKey);//生成钱包
+                    const wallet = new Wallet(privateKey);//生成钱包
                     const existingAccounts = get().accounts;//获取现有账户列表
 
                     //构建账户
@@ -232,38 +245,44 @@ export const useWalletStore = create<WalletStore>()(
 
             //创建新账户
             createAccount: (name?: string) => {
-                //检查助词器和密码是否存在
-                const state = get();
-                if (!state.mnemonic || !state.password) {
-                    throw new Error('No Wallet found');
+                try {
+                    //检查助词器和密码是否存在
+                    const state = get();
+                    if (!state.mnemonic || !state.password) {
+                        throw new Error('No Wallet found');
+                    }
+                    //解密助词器
+                    const decryptedMnemonic = AES.decrypt(state.mnemonic, state.password).toString(enc.Utf8);
+                    //把助记词转成 seed
+                    const seedBuffer = bip39.mnemonicToSeedSync(decryptedMnemonic);
+                    // 转成 Uint8Array
+                    const seed = new Uint8Array(seedBuffer);
+                    //生成钱包
+                    const hdNode = HDNodeWallet.fromSeed(seed);
+                    //获取账户索引
+                    const accountIndex = state.accounts.length;
+                    //生成账户
+                    const wallet = hdNode.derivePath(`m/44'/60'/0'/0/${accountIndex}`);
+                    //构建账户对象
+                    const account: WalletAccount = {
+                        address: wallet.address,
+                        privateKey: wallet.privateKey,
+                        name: name || `Account ${accountIndex + 1}`,
+                        index: accountIndex,
+                    }
+                    //使用 AES.encrypt 加密私钥。
+                    const encryptedPrivateKey = AES.encrypt(account.privateKey, state.password).toString();
+                    //更新状态
+                    set(state => ({
+                        accounts: [...state.accounts, { ...account, privateKey: encryptedPrivateKey }],
+                        currentAccount: account,
+                    }));
+                    return account;
+                }catch(error){
+                    console.error("error", error);
+                    throw new Error('Failed to create account');
                 }
-                //解密助词器
-                const decryptedMnemonic = AES.decrypt(state.mnemonic, state.password).toString(enc.Utf8);
-                //把助记词转成 seed
-                const seedBuffer = bip39.mnemonicToSeedSync(decryptedMnemonic);
-                // 转成 Uint8Array
-                const seed = new Uint8Array(seedBuffer);
-                //生成钱包
-                const hdNode = ethers.HDNodeWallet.fromSeed(seed);
-                //获取账户索引
-                const accountIndex = state.accounts.length;
-                //生成账户
-                const wallet = hdNode.derivePath(`m/44'/60'/0'/0/${accountIndex}`);
-                //构建账户对象
-                const account: WalletAccount = {
-                    address: wallet.address,
-                    privateKey: wallet.privateKey,
-                    name: name || `Account ${accountIndex + 1}`,
-                    index: accountIndex,
-                }
-                //使用 AES.encrypt 加密私钥。
-                const encryptedPrivateKey = AES.encrypt(account.privateKey, state.password).toString();
-                //更新状态
-                set(state => ({
-                    accounts: [...state.accounts, { ...account, privateKey: encryptedPrivateKey }],
-                    currentAccount: account,
-                }));
-                return account;
+               
             },
             //账户管理
             switchAccount: (address: string) => {
@@ -338,7 +357,7 @@ export const useWalletStore = create<WalletStore>()(
                 //如果prc配置异常，捕获错误并返回null
                 const state = get();
                 try {
-                    return new ethers.JsonRpcProvider(state.currentNetwork.rpcUrl);
+                    return new JsonRpcProvider(state.currentNetwork.rpcUrl);
                 } catch (error) {
                     console.error('Failed to create provider', error);
                     return null;
@@ -390,7 +409,7 @@ export const useWalletStore = create<WalletStore>()(
                 const bytes = AES.decrypt(account.privateKey, state.password);
                 const privateKey = bytes.toString(enc.Utf8);
                 //用 ethers.Wallet(privateKey) 创建钱包对象。
-                const wallet = new ethers.Wallet(privateKey);
+                const wallet = new Wallet(privateKey);
                 //调用 wallet.signMessage(message) 返回签名
                 return wallet.signMessage(message)
             },

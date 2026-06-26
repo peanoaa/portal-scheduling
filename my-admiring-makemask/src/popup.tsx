@@ -26,8 +26,8 @@ export default function popup() {
         <Sonner />
         <BrowserRouter>
           <Routes>
-              <Route path="/popup.html" element={<div className='w-[400]'><Index /></div>} />
-              <Route path="*" element={<div className="w-[400px]"><NotFound /></div>} />
+              <Route path="/popup.html" element={<div className="plasmo-w-[400px] "><Index /></div>} />
+              <Route path="*" element={<div className="plasmo-w-[400px]"><NotFound /></div>} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
