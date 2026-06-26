@@ -34,6 +34,8 @@ import { persist } from 'zustand/middleware';
 
 //先继承WalletState，再定义方法
 interface WalletStore extends WalletState {
+    /** 解锁后的会话密码，仅内存使用，不持久化 */
+    sessionPassword: string | null;
     //钱包管理
     //创建新钱包：生成助记词、派生第一个账户，用密码加密后存起来。返回助记词和账户信息。
     createWallet: (password: string) => Promise<{ mnemonic: string, account: WalletAccount }>;
@@ -86,13 +88,14 @@ interface WalletStore extends WalletState {
 }
 
 //初始状态
-const initialState: WalletState = {
+const initialState: WalletState & Pick<WalletStore, 'sessionPassword'> = {
     isLocked: false,//钱包是否锁定
     isConnected: false,//当前是否连接 DApp
     accounts: [],//钱包账户列表
     currentAccount: null,//当前选中的账户
     mnemonic: null,//加密后的助记词
     password: null,//SHA256 后的密码
+    sessionPassword: null,//AES 会话密钥，不持久化
     currentNetwork: DEFAULT_NETWORKS[0],//当前网络
     networks: DEFAULT_NETWORKS,//网络列表
     tokens: []//代币列表
@@ -144,6 +147,7 @@ export const useWalletStore = create<WalletStore>()(
                     //使用 SHA256(password) 保存密码哈希。
                     set({
                         isLocked: false,
+                        sessionPassword: password,
                         accounts: [{ ...account, privateKey: encryptedPrivateKey }],
                         currentAccount: account,
                         mnemonic: encryptedMnemonic,
@@ -189,6 +193,7 @@ export const useWalletStore = create<WalletStore>()(
 
                 set({
                     isLocked: false,
+                    sessionPassword: password,
                     accounts: [{ ...account, privateKey: encryptedPrivateKey }],
                     currentAccount: account,
                     mnemonic: encryptedMnemonic,
@@ -218,6 +223,7 @@ export const useWalletStore = create<WalletStore>()(
                         accounts: [...state.accounts, { ...account, privateKey: encryptedPrivateKey }],
                         currentAccount: account,
                         password: state.password || SHA256(password).toString(),
+                        sessionPassword: state.sessionPassword || password,
                     }));
 
                     return account
@@ -232,7 +238,7 @@ export const useWalletStore = create<WalletStore>()(
                 //进行密码哈希对比，正确就把isLocked设置为false
                 const hashedPassword = SHA256(password).toString();
                 if (hashedPassword === state.password) {
-                    set({ isLocked: false });
+                    set({ isLocked: false, sessionPassword: password });
                     return true;
                 }
                 return false;
@@ -240,7 +246,7 @@ export const useWalletStore = create<WalletStore>()(
 
             //锁定钱包
             lockWallet: () => {
-                set({ isLocked: true });
+                set({ isLocked: true, sessionPassword: null });
             },
 
             //创建新账户
@@ -251,8 +257,12 @@ export const useWalletStore = create<WalletStore>()(
                     if (!state.mnemonic || !state.password) {
                         throw new Error('No Wallet found');
                     }
+                    if (state.isLocked || !state.sessionPassword) {
+                        throw new Error('请先解锁钱包');
+                    }
+                    const key = state.sessionPassword;
                     //解密助词器
-                    const decryptedMnemonic = AES.decrypt(state.mnemonic, state.password).toString(enc.Utf8);
+                    const decryptedMnemonic = AES.decrypt(state.mnemonic, key).toString(enc.Utf8);
                     //把助记词转成 seed
                     const seedBuffer = bip39.mnemonicToSeedSync(decryptedMnemonic);
                     // 转成 Uint8Array
@@ -271,7 +281,7 @@ export const useWalletStore = create<WalletStore>()(
                         index: accountIndex,
                     }
                     //使用 AES.encrypt 加密私钥。
-                    const encryptedPrivateKey = AES.encrypt(account.privateKey, state.password).toString();
+                    const encryptedPrivateKey = AES.encrypt(account.privateKey, key).toString();
                     //更新状态
                     set(state => ({
                         accounts: [...state.accounts, { ...account, privateKey: encryptedPrivateKey }],
@@ -397,16 +407,17 @@ export const useWalletStore = create<WalletStore>()(
             },
             //对 DApp 传来的消息签名。
             signMessage: async (message: string) => {
-                // 从 localStorage.getItem("wallet-store") 读取钱包状态。
-                const { state } = JSON.parse(localStorage.getItem("wallet-store"));
-                console.log('钱包信息：', state);
+                const state = get();
+                if (state.isLocked || !state.sessionPassword) {
+                    throw new Error('请先解锁钱包');
+                }
                 // 取当前账户。
                 const account = state.currentAccount;
                 if (!account) {
                     throw new Error('未链接钱包');
                 }
                 // 解密当前账户的私钥
-                const bytes = AES.decrypt(account.privateKey, state.password);
+                const bytes = AES.decrypt(account.privateKey, state.sessionPassword);
                 const privateKey = bytes.toString(enc.Utf8);
                 //用 ethers.Wallet(privateKey) 创建钱包对象。
                 const wallet = new Wallet(privateKey);
@@ -451,7 +462,12 @@ export const useWalletStore = create<WalletStore>()(
                 currentNetwork: state.currentNetwork,
                 currentAccount: state.currentAccount,
                 isConnected: state.isConnected
-            })
+            }),
+            onRehydrateStorage: () => (state) => {
+                if (state) {
+                    state.sessionPassword = null;
+                }
+            },
 
         }
     )
