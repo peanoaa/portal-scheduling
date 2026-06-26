@@ -12,7 +12,7 @@ import { set } from 'react-hook-form';
 
 export default function WalletDashboard() {
 
-    const { currentAccount, currentNetwork, createAccount,lockWallet, updateAccountName,mnemonic, password,accounts } = useWalletStore();
+    const { currentAccount, currentNetwork, switchAccount,createAccount,lockWallet, updateAccountName,mnemonic, password,accounts } = useWalletStore();
     // console.log("currentAccount", currentAccount, "currentNetwork", currentNetwork);
     const [thispassword, thissetPassword] = useState('');
     const { toast } = useToast();
@@ -97,6 +97,17 @@ export default function WalletDashboard() {
                 variant: 'destructive',
             })
         }
+    }
+    //切换账户
+    const handleSwitchAccount = (address: string) => {
+        try{
+            switchAccount(address);
+            console.log('1111111111');
+            
+        }catch(error){
+
+        }
+
     }
     return (
         <div>
@@ -191,7 +202,8 @@ export default function WalletDashboard() {
                                 <div>
                                     {/* 账户 */}
                                     {accounts.map((account) => (
-                                        <div key={account.address}>
+                                        // 添加切换账户事件
+                                        <div key={account.address} onClick={() => handleSwitchAccount(account.address)}>
                                             <p>{account.name}</p>
                                             <p>{account.address}</p>
                                         </div>
